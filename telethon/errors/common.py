@@ -68,6 +68,15 @@ class SecurityError(Exception):
         super().__init__(*args)
 
 
+class SessionIdError(SecurityError):
+    """
+    Server replied with wrong session ID.
+    """
+    def __init__(self):
+        args = ['Server replied with wrong session ID.']
+        super().__init__(*args)
+
+
 class CdnFileTamperedError(SecurityError):
     """
     Occurs when there's a hash mismatch between the decrypted CDN file

@@ -1,6 +1,9 @@
 import asyncio
 import collections
 import struct
+from typing import Set
+
+from telethon.errors.common import SessionIdError
 
 from . import authenticator
 from ..extensions.messagepacker import MessagePacker
@@ -111,6 +114,9 @@ class MTProtoSender:
             DestroySessionOk: self._handle_destroy_session,
             DestroySessionNone: self._handle_destroy_session,
         }
+
+        self.send_loop_halter: Set[asyncio.Task] = set()
+        self.halting_send_loop = False
 
     # Public API
 
@@ -446,7 +452,7 @@ class MTProtoSender:
 
         Besides `connect`, only this method ever sends data.
         """
-        while self._user_connected and not self._reconnecting:
+        while self._user_connected and not self._reconnecting and not self.halting_send_loop:
             if self._pending_ack:
                 ack = RequestState(MsgsAck(list(self._pending_ack)))
                 self._send_queue.append(ack)
@@ -513,6 +519,11 @@ class MTProtoSender:
                 self._log.info('Type %08x not found, remaining data %r',
                                e.invalid_constructor_id, e.remaining)
                 continue
+            except SessionIdError as e:
+                self._log.warning('Server replied with wrong session ID, '
+                                  'starting reconnect')
+                self._start_reconnect(e)
+                return
             except SecurityError as e:
                 # A step while decoding had the incorrect data. This message
                 # should not be considered safe and it should be ignored.
@@ -527,6 +538,15 @@ class MTProtoSender:
                         self._auth_key_callback(None)
 
                     await self._disconnect(error=e)
+                elif isinstance(e, InvalidBufferError) and e.code == 429:
+                    self._log.warning('Too many requests: HTTP code 429')
+                    if len(self.send_loop_halter) > 0:
+                        continue
+                    loop = asyncio.get_event_loop()
+                    halt_task = loop.create_task(self._halt_send_loop())
+                    self.send_loop_halter.add(halt_task)
+                    halt_task.add_done_callback(self.send_loop_halter.discard)
+                    continue
                 else:
                     self._log.warning('Invalid buffer %s', e)
                     self._start_reconnect(e)
@@ -540,6 +560,13 @@ class MTProtoSender:
                 await self._process_message(message)
             except Exception:
                 self._log.exception('Unhandled error while processing msgs')
+
+
+    async def _halt_send_loop(self):
+        self.halting_send_loop = True
+        await asyncio.sleep(10)
+        self.halting_send_loop = False
+
 
     # Response Handlers
 

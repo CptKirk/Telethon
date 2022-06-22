@@ -4,7 +4,7 @@ import time
 from hashlib import sha256
 
 from ..crypto import AES
-from ..errors import SecurityError, InvalidBufferError
+from ..errors import SecurityError, SessionIdError, InvalidBufferError
 from ..extensions import BinaryReader
 from ..tl.core import TLMessage
 from ..tl.tlobject import TLRequest
@@ -156,7 +156,7 @@ class MTProtoState:
         reader = BinaryReader(body)
         reader.read_long()  # remote_salt
         if reader.read_long() != self.id:
-            raise SecurityError('Server replied with a wrong session ID')
+            raise SessionIdError()
 
         remote_msg_id = reader.read_long()
         remote_sequence = reader.read_int()

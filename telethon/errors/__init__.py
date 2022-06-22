@@ -6,7 +6,7 @@ import re
 
 from .common import (
     ReadCancelledError, TypeNotFoundError, InvalidChecksumError,
-    InvalidBufferError, SecurityError, CdnFileTamperedError,
+    InvalidBufferError, SecurityError, SessionIdError, CdnFileTamperedError,
     AlreadyInConversationError, BadMessageError, MultiError
 )
 
