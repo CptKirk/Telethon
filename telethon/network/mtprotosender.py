@@ -503,7 +503,9 @@ class MTProtoSender:
 
         Besides `connect`, only this method ever receives data.
         """
+        cnt = 0
         while self._user_connected and not self._reconnecting:
+            cnt += 1
             self._log.debug('Receiving items from the network...')
             try:
                 body = await self._connection.recv()
@@ -513,6 +515,8 @@ class MTProtoSender:
                 return
 
             try:
+                if cnt % 25 == 0:
+                    raise InvalidBufferError(struct.pack('<i', -429))
                 message = self._state.decrypt_message_data(body)
             except TypeNotFoundError as e:
                 # Received object which we don't know how to deserialize
