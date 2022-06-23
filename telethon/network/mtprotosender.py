@@ -515,7 +515,7 @@ class MTProtoSender:
                 return
 
             try:
-                if cnt % 25 == 0:
+                if cnt % 200 == 0:
                     raise InvalidBufferError(struct.pack('<i', -429))
                 message = self._state.decrypt_message_data(body)
             except TypeNotFoundError as e:
@@ -547,7 +547,7 @@ class MTProtoSender:
                     if len(self.send_loop_halter) > 0:
                         continue
                     loop = asyncio.get_event_loop()
-                    halt_task = loop.create_task(self._halt_send_loop())
+                    halt_task = loop.create_task(self._halt_send_loop(cnt))
                     self.send_loop_halter.add(halt_task)
                     halt_task.add_done_callback(self.send_loop_halter.discard)
                     continue
@@ -566,10 +566,12 @@ class MTProtoSender:
                 self._log.exception('Unhandled error while processing msgs')
 
 
-    async def _halt_send_loop(self):
+    async def _halt_send_loop(self, cnt: int):
+        self._log.warning('Entering _halt_send_loop: {}'.format(cnt))
         self.halting_send_loop = True
         await asyncio.sleep(10)
         self.halting_send_loop = False
+        self._log.warning('Leaving _halt_send_loop: {}'.format(cnt))
 
 
     # Response Handlers
