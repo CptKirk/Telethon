@@ -452,7 +452,10 @@ class MTProtoSender:
 
         Besides `connect`, only this method ever sends data.
         """
-        while self._user_connected and not self._reconnecting and not self.halting_send_loop:
+        while self._user_connected and not self._reconnecting:
+            if self.halting_send_loop:
+                self._log.warning('Skipping send loop iteration')
+                continue
             if self._pending_ack:
                 ack = RequestState(MsgsAck(list(self._pending_ack)))
                 self._send_queue.append(ack)
@@ -508,7 +511,10 @@ class MTProtoSender:
             cnt += 1
             self._log.debug('Receiving items from the network...')
             try:
-                body = await self._connection.recv()
+                if cnt % 200 == 0:
+                    pass
+                else:
+                    body = await self._connection.recv()
             except IOError as e:
                 self._log.info('Connection closed while receiving data')
                 self._start_reconnect(e)
