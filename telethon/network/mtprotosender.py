@@ -116,7 +116,6 @@ class MTProtoSender:
         }
 
         self.send_loop_halter: Set[asyncio.Task] = set()
-        self.halting_send_loop = False
 
     # Public API
 
@@ -452,7 +451,7 @@ class MTProtoSender:
 
         Besides `connect`, only this method ever sends data.
         """
-        while self._user_connected and not self._reconnecting and not self.halting_send_loop:
+        while self._user_connected and not self._reconnecting:
             if self._pending_ack:
                 ack = RequestState(MsgsAck(list(self._pending_ack)))
                 self._send_queue.append(ack)
@@ -543,7 +542,7 @@ class MTProtoSender:
                     if len(self.send_loop_halter) > 0:
                         continue
                     loop = asyncio.get_event_loop()
-                    halt_task = loop.create_task(self._halt_send_loop())
+                    halt_task = loop.create_task(self._halt_send_loop(loop))
                     self.send_loop_halter.add(halt_task)
                     halt_task.add_done_callback(self.send_loop_halter.discard)
                     continue
@@ -562,10 +561,14 @@ class MTProtoSender:
                 self._log.exception('Unhandled error while processing msgs')
 
 
-    async def _halt_send_loop(self):
-        self.halting_send_loop = True
+    async def _halt_send_loop(self, loop: asyncio.AbstractEventLoop):
+        self._log.warning('Cancelling send loop due to HTTP code 429')
+        await helpers._cancel(self._send_loop_handle)
+
         await asyncio.sleep(10)
-        self.halting_send_loop = False
+
+        self._log.warning('Restarting send loop after HTTP code 429')
+        self._send_loop_handle = loop.create_task(self._send_loop())
 
 
     # Response Handlers
