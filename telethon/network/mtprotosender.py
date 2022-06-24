@@ -112,6 +112,8 @@ class MTProtoSender:
             DestroySessionNone: self._handle_destroy_session,
         }
 
+        self.send_loop_halter = set()
+
     # Public API
 
     async def connect(self, connection):
@@ -527,6 +529,15 @@ class MTProtoSender:
                         self._auth_key_callback(None)
 
                     await self._disconnect(error=e)
+                elif isinstance(e, InvalidBufferError) and e.code == 429:
+                    self._log.warning('Too many requests: HTTP code 429')
+                    if len(self.send_loop_halter) > 0:
+                        continue
+                    loop = asyncio.get_event_loop()
+                    halt_task = loop.create_task(self._halt_send_loop(loop))
+                    self.send_loop_halter.add(halt_task)
+                    halt_task.add_done_callback(self.send_loop_halter.discard)
+                    continue
                 else:
                     self._log.warning('Invalid buffer %s', e)
                     self._start_reconnect(e)
@@ -540,6 +551,15 @@ class MTProtoSender:
                 await self._process_message(message)
             except Exception:
                 self._log.exception('Unhandled error while processing msgs')
+
+    async def _halt_send_loop(self, loop: asyncio.AbstractEventLoop):
+        self._log.warning('Cancelling send loop due to HTTP code 429')
+        await helpers._cancel(self._send_loop_handle)
+
+        await asyncio.sleep(10)
+
+        self._log.warning('Restarting send loop after HTTP code 429')
+        self._send_loop_handle = loop.create_task(self._send_loop())
 
     # Response Handlers
 
