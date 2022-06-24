@@ -116,7 +116,6 @@ class MTProtoSender:
         }
 
         self.send_loop_halter: Set[asyncio.Task] = set()
-        self.halting_send_loop = False
 
     # Public API
 
@@ -453,9 +452,6 @@ class MTProtoSender:
         Besides `connect`, only this method ever sends data.
         """
         while self._user_connected and not self._reconnecting:
-            if self.halting_send_loop:
-                self._log.warning('Skipping send loop iteration')
-                continue
             if self._pending_ack:
                 ack = RequestState(MsgsAck(list(self._pending_ack)))
                 self._send_queue.append(ack)
@@ -553,7 +549,7 @@ class MTProtoSender:
                     if len(self.send_loop_halter) > 0:
                         continue
                     loop = asyncio.get_event_loop()
-                    halt_task = loop.create_task(self._halt_send_loop(cnt))
+                    halt_task = loop.create_task(self._halt_send_loop(loop, cnt))
                     self.send_loop_halter.add(halt_task)
                     halt_task.add_done_callback(self.send_loop_halter.discard)
                     continue
@@ -572,11 +568,17 @@ class MTProtoSender:
                 self._log.exception('Unhandled error while processing msgs')
 
 
-    async def _halt_send_loop(self, cnt: int):
+    async def _halt_send_loop(self, loop: asyncio.AbstractEventLoop, cnt: int):
         self._log.warning('Entering _halt_send_loop: {}'.format(cnt))
-        self.halting_send_loop = True
+
+        self._log.warning('Cancelling send loop: {}'.format(cnt))
+        await helpers._cancel(self._send_loop_handle)
+
         await asyncio.sleep(10)
-        self.halting_send_loop = False
+
+        self._log.warning('Restarting send loop: {}'.format(cnt))
+        self._send_loop_handle = loop.create_task(self._send_loop())
+
         self._log.warning('Leaving _halt_send_loop: {}'.format(cnt))
 
 
